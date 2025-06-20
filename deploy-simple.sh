@@ -11,6 +11,26 @@ PROJECT_ID=${GCLOUD_PROJECT_ID:-"email-classifier-463413"}
 SERVICE_NAME="email-classifier"
 REGION=${GCLOUD_REGION:-"us-central1"}
 
+# Load environment variables from .env file
+if [ -f .env ]; then
+  echo "📄 Loading environment variables from .env file..."
+  source .env
+else
+  echo "❌ .env file not found! Please create one with your API keys."
+  exit 1
+fi
+
+# Check required environment variables
+REQUIRED_VARS="OPENAI_API_KEY GMAIL_CLIENT_ID GMAIL_CLIENT_SECRET GMAIL_REFRESH_TOKEN GMAIL_ACCESS_TOKEN"
+for var in $REQUIRED_VARS; do
+  if [ -z "${!var}" ]; then
+    echo "❌ Missing required environment variable: $var"
+    exit 1
+  fi
+done
+
+echo "✅ All required environment variables found"
+
 echo "📋 Configuration:"
 echo "  Project ID: $PROJECT_ID"
 echo "  Service Name: $SERVICE_NAME" 
@@ -53,25 +73,17 @@ gcloud run deploy $SERVICE_NAME \
   --concurrency 1 \
   --cpu-throttling \
   --execution-environment gen2 \
-  --set-env-vars POLL_INTERVAL=300000,MAX_RESULTS=50 \
+  --set-env-vars OPENAI_API_KEY="$OPENAI_API_KEY",GMAIL_CLIENT_ID="$GMAIL_CLIENT_ID",GMAIL_CLIENT_SECRET="$GMAIL_CLIENT_SECRET",GMAIL_REFRESH_TOKEN="$GMAIL_REFRESH_TOKEN",GMAIL_ACCESS_TOKEN="$GMAIL_ACCESS_TOKEN" \
   --port 8080
 
 echo ""
 echo "🎉 Deployment complete!"
 echo ""
 echo "📝 Next steps:"
-echo "1. Set environment variables in Cloud Run console:"
-echo "   https://console.cloud.google.com/run/detail/$REGION/$SERVICE_NAME/variables"
+echo "1. ✅ Environment variables automatically set from .env file"
 echo ""
-echo "   Required variables:"
-echo "   - OPENAI_API_KEY=your_openai_key"
-echo "   - GMAIL_CLIENT_ID=your_client_id" 
-echo "   - GMAIL_CLIENT_SECRET=your_client_secret"
-echo "   - GMAIL_REFRESH_TOKEN=your_refresh_token"
-echo "   - GMAIL_ACCESS_TOKEN=your_access_token"
-echo ""
-echo "2. Check logs:"
-echo "   gcloud run logs tail $SERVICE_NAME --region $REGION"
+echo "2. Check logs to verify Gmail push notifications:"
+echo "   gcloud logging read \"resource.type=cloud_run_revision AND resource.labels.service_name=$SERVICE_NAME\" --limit=20 --project=$PROJECT_ID"
 echo ""
 echo "3. Service URL:"
 SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format="value(status.url)")
@@ -79,3 +91,6 @@ echo "   $SERVICE_URL"
 echo ""
 echo "4. Test health check:"
 echo "   curl $SERVICE_URL/health"
+echo ""
+echo "5. Gmail push notifications will be automatically set up!"
+echo "   Watch the logs for: '🎯 Gmail push notifications active'"
