@@ -1,0 +1,36 @@
+{
+  "name": "email-classifier",
+  "version": "1.0.0",
+  "description": "AI-powered email classification system inspired by n8n workflow",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "test": "node index.js test",
+    "validate": "node index.js validate",
+    "monitor": "node index.js monitor",
+    "full-test": "node index.js full-test",
+    "start": "node server.js",
+    "dev": "node --watch index.js monitor",
+    "oauth": "node oauth-setup.js",
+    "oauth-revoke": "node oauth-setup.js revoke",
+    "get-labels": "node get-labels.js"
+  },
+  "keywords": [
+    "email",
+    "classification",
+    "ai",
+    "gmail",
+    "openai",
+    "automation"
+  ],
+  "author": "Email Classifier",
+  "license": "MIT",
+  "dependencies": {
+    "openai": "^4.70.0",
+    "googleapis": "^144.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
