@@ -127,7 +127,7 @@ async function startEmailClassifier() {
       // Cloud Run: use push notifications
       console.log('☁️ Running on Cloud Run - setting up push notifications...');
       await emailClassifier.setupGmailWatch({
-        topicName: 'projects/email-classifier-463413/topics/gmail-notifications',
+        topicName: `projects/${process.env.GCLOUD_PROJECT_ID || 'email-classifier-463413'}/topics/gmail-notifications`,
         labelIds: ['INBOX']
       });
       console.log('🎯 Gmail push notifications active - ready to receive emails!');
