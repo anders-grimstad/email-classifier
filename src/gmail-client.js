@@ -243,18 +243,22 @@ export class GmailClient {
    * @returns {string} HTML content
    */
   extractHtmlContent(payload) {
+    if (payload.mimeType === 'text/html' && payload.body?.data) {
+      return Buffer.from(payload.body.data, 'base64').toString('utf-8');
+    }
+
     if (payload.parts) {
       for (const part of payload.parts) {
         if (part.mimeType === 'text/html' && part.body?.data) {
           return Buffer.from(part.body.data, 'base64').toString('utf-8');
         }
-        
+
         // Recursively search in nested parts
         const htmlContent = this.extractHtmlContent(part);
         if (htmlContent) return htmlContent;
       }
     }
-    
+
     return '';
   }
 
