@@ -10,33 +10,78 @@ import http from 'http';
 import { EmailClassifier } from './src/email-classifier.js';
 
 const PORT = process.env.PORT || 8080;
+let emailClassifier = null;
 
-// Health check endpoint
-const server = http.createServer((req, res) => {
-  if (req.url === '/health' || req.url === '/') {
+// Server endpoints
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  
+  if (url.pathname === '/health' || url.pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ 
       status: 'healthy', 
       service: 'email-classifier',
       timestamp: new Date().toISOString()
     }));
+  } else if (url.pathname === '/gmail-webhook' && req.method === 'POST') {
+    await handleGmailWebhook(req, res);
   } else {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
   }
 });
 
+// Gmail webhook handler
+async function handleGmailWebhook(req, res) {
+  try {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    
+    req.on('end', async () => {
+      try {
+        console.log('📨 Received Gmail webhook notification');
+        
+        // Parse the Pub/Sub message
+        const pubsubMessage = JSON.parse(body);
+        if (pubsubMessage.message && pubsubMessage.message.data) {
+          const messageData = JSON.parse(Buffer.from(pubsubMessage.message.data, 'base64').toString());
+          console.log('Gmail notification data:', messageData);
+          
+          // Process the notification
+          if (messageData.historyId && emailClassifier) {
+            console.log('🔄 Processing Gmail history changes...');
+            await emailClassifier.processHistoryChanges(messageData.historyId);
+          }
+        }
+        
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'processed' }));
+      } catch (error) {
+        console.error('Error processing webhook:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Processing failed' }));
+      }
+    });
+  } catch (error) {
+    console.error('Error handling webhook:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Webhook failed' }));
+  }
+}
+
 server.listen(PORT, () => {
   console.log(`🌐 Health check server running on port ${PORT}`);
   
   // Delay email monitoring startup to ensure server is ready
   setTimeout(() => {
-    console.log('🚀 Starting email classifier monitoring...');
-    startEmailMonitoring();
+    console.log('🚀 Starting email classifier with push notifications...');
+    startEmailClassifier();
   }, 5000); // 5 second delay
 });
 
-async function startEmailMonitoring() {
+async function startEmailClassifier() {
   try {
     // Check if required environment variables are set
     const requiredEnvVars = [
@@ -45,6 +90,9 @@ async function startEmailMonitoring() {
       'GMAIL_CLIENT_SECRET',
       'GMAIL_REFRESH_TOKEN'
     ];
+    
+    // Check if running locally vs Cloud Run
+    const isLocal = !process.env.K_SERVICE; // K_SERVICE is set in Cloud Run
     
     console.log('🔍 Checking environment variables...');
     
@@ -65,14 +113,25 @@ async function startEmailMonitoring() {
     }
     
     console.log('✅ All required environment variables found');
-    const classifier = new EmailClassifier();
+    emailClassifier = new EmailClassifier();
     
-    // Enhanced monitoring options for cloud deployment
-    await classifier.startMonitoring({
-      pollInterval: process.env.POLL_INTERVAL || 300000, // 5 minutes default
-      maxResults: process.env.MAX_RESULTS || 200,
-      labelFilter: 'in:inbox'
-    });
+    if (isLocal) {
+      // Local development: use polling
+      console.log('🖥️ Running locally - using polling mode...');
+      await emailClassifier.startMonitoring({
+        pollInterval: 60000, // 1 minute for local testing
+        maxResults: 10,
+        labelFilter: 'in:inbox'
+      });
+    } else {
+      // Cloud Run: use push notifications
+      console.log('☁️ Running on Cloud Run - setting up push notifications...');
+      await emailClassifier.setupGmailWatch({
+        topicName: 'projects/email-classifier-463413/topics/gmail-notifications',
+        labelIds: ['INBOX']
+      });
+      console.log('🎯 Gmail push notifications active - ready to receive emails!');
+    }
   } catch (error) {
     console.error('❌ Error starting email monitoring:', error);
     console.error('🌐 Health endpoint will remain available for debugging');

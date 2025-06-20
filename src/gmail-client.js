@@ -17,7 +17,19 @@ export class GmailClient {
       access_token: ENV.GMAIL_ACCESS_TOKEN
     });
     
-    this.gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
+    // Configure timeouts and connection settings
+    this.gmail = google.gmail({ 
+      version: 'v1', 
+      auth: this.oauth2Client,
+      timeout: 30000, // 30 second timeout
+      retry: true,
+      retryConfig: {
+        retry: 3,
+        retryDelay: 1000,
+        httpMethodsToRetry: ['GET'],
+        statusCodesToRetry: [[500, 599], [429, 429]]
+      }
+    });
   }
 
   /**
@@ -25,18 +37,32 @@ export class GmailClient {
    * @param {string} messageId - Gmail message ID
    * @returns {Promise<Object>} Email details
    */
-  async getEmail(messageId) {
-    try {
-      const response = await this.gmail.users.messages.get({
-        userId: 'me',
-        id: messageId,
-        format: 'full'
-      });
-      
-      return this.parseEmailData(response.data);
-    } catch (error) {
-      console.error('Error getting email:', error);
-      throw error;
+  async getEmail(messageId, retries = 3) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await this.gmail.users.messages.get({
+          userId: 'me',
+          id: messageId,
+          format: 'full'
+        });
+        
+        return this.parseEmailData(response.data);
+      } catch (error) {
+        const isNetworkError = error.code === 'ECONNRESET' || 
+                             error.code === 'ENOTFOUND' ||
+                             error.code === 'ETIMEDOUT' ||
+                             (error.status >= 500 && error.status < 600);
+        
+        if (isNetworkError && attempt < retries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10s
+          console.log(`Network error (attempt ${attempt}/${retries}), retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        console.error(`Error getting email ${messageId} (attempt ${attempt}/${retries}):`, error.message);
+        throw error;
+      }
     }
   }
 
@@ -245,6 +271,66 @@ export class GmailClient {
       return response.data.labels || [];
     } catch (error) {
       console.error('Error getting labels:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set up Gmail push notifications
+   * @param {Object} options - Watch options
+   * @returns {Promise<Object>} Watch response
+   */
+  async setupWatch(options = {}) {
+    try {
+      const watchRequest = {
+        userId: 'me',
+        requestBody: {
+          topicName: options.topicName,
+          labelIds: options.labelIds || ['INBOX'],
+          labelFilterAction: 'include'
+        }
+      };
+
+      console.log('Setting up Gmail watch with options:', watchRequest.requestBody);
+      const response = await this.gmail.users.watch(watchRequest);
+      console.log('✅ Gmail watch setup successful:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error setting up Gmail watch:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get Gmail history changes
+   * @param {string} startHistoryId - Starting history ID
+   * @returns {Promise<Array>} Array of history changes
+   */
+  async getHistory(startHistoryId) {
+    try {
+      const response = await this.gmail.users.history.list({
+        userId: 'me',
+        startHistoryId: startHistoryId,
+        historyTypes: ['messageAdded']
+      });
+
+      return response.data.history || [];
+    } catch (error) {
+      console.error('Error getting Gmail history:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stop Gmail watch
+   * @returns {Promise<void>}
+   */
+  async stopWatch() {
+    try {
+      await this.gmail.users.stop({ userId: 'me' });
+      console.log('✅ Gmail watch stopped');
+    } catch (error) {
+      console.error('Error stopping Gmail watch:', error);
       throw error;
     }
   }

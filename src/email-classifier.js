@@ -170,6 +170,103 @@ export class EmailClassifier {
   }
 
   /**
+   * Set up Gmail push notifications
+   * @param {Object} options - Watch options
+   * @returns {Promise<Object>} Watch response
+   */
+  async setupGmailWatch(options) {
+    try {
+      console.log('🔧 Setting up Gmail watch for push notifications...');
+      const watchResult = await this.gmailClient.setupWatch(options);
+      
+      // Store the history ID for future reference
+      this.lastHistoryId = watchResult.historyId;
+      console.log(`📊 Gmail watch active with history ID: ${this.lastHistoryId}`);
+      
+      return watchResult;
+    } catch (error) {
+      console.error('❌ Failed to setup Gmail watch:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process Gmail history changes from push notifications
+   * @param {string} historyId - History ID from push notification
+   * @returns {Promise<void>}
+   */
+  async processHistoryChanges(historyId) {
+    try {
+      if (!this.lastHistoryId) {
+        console.log('⚠️ No stored history ID, fetching recent emails...');
+        // If we don't have a baseline, just process recent emails
+        const recentEmails = await this.gmailClient.searchEmails('in:inbox', 5);
+        await this.processEmails(recentEmails);
+        this.lastHistoryId = historyId;
+        return;
+      }
+
+      console.log(`🔍 Processing history changes from ${this.lastHistoryId} to ${historyId}`);
+      
+      // Get history changes since last processed
+      const historyChanges = await this.gmailClient.getHistory(this.lastHistoryId);
+      
+      if (historyChanges.length === 0) {
+        console.log('📭 No new history changes to process');
+        return;
+      }
+
+      // Extract new message IDs from history
+      const newMessageIds = [];
+      for (const change of historyChanges) {
+        if (change.messagesAdded) {
+          for (const messageAdded of change.messagesAdded) {
+            newMessageIds.push(messageAdded.message.id);
+          }
+        }
+      }
+
+      console.log(`📬 Found ${newMessageIds.length} new messages to classify`);
+
+      // Process each new message
+      for (const messageId of newMessageIds) {
+        try {
+          console.log(`🔄 Processing message: ${messageId}`);
+          await this.classifyEmail(messageId);
+          
+          // Rate limiting
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`❌ Failed to process message ${messageId}:`, error);
+        }
+      }
+
+      // Update our stored history ID
+      this.lastHistoryId = historyId;
+      console.log(`✅ Processed ${newMessageIds.length} messages, updated history ID to ${historyId}`);
+      
+    } catch (error) {
+      console.error('❌ Error processing history changes:', error);
+    }
+  }
+
+  /**
+   * Process multiple emails
+   * @param {Array} emails - Array of email objects with id property
+   * @returns {Promise<void>}
+   */
+  async processEmails(emails) {
+    for (const email of emails) {
+      try {
+        await this.classifyEmail(email.id);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limiting
+      } catch (error) {
+        console.error(`Failed to process email ${email.id}:`, error);
+      }
+    }
+  }
+
+  /**
    * Classify emails from test data (useful for testing)
    * @param {Array<Object>} testEmails - Array of test email objects
    * @returns {Promise<Array>} Classification results

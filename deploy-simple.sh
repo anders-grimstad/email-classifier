@@ -46,11 +46,14 @@ gcloud run deploy $SERVICE_NAME \
   --platform managed \
   --region $REGION \
   --allow-unauthenticated \
-  --memory 1Gi \
-  --cpu 1 \
+  --memory 2Gi \
+  --cpu 2 \
   --timeout 3600 \
   --max-instances 1 \
-  --set-env-vars POLL_INTERVAL=300000,MAX_RESULTS=200 \
+  --concurrency 1 \
+  --cpu-throttling \
+  --execution-environment gen2 \
+  --set-env-vars POLL_INTERVAL=300000,MAX_RESULTS=50 \
   --port 8080
 
 echo ""
